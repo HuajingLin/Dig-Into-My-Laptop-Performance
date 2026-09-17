@@ -10,7 +10,10 @@
 
 namespace {
 
-// 64-byte aligned allocation
+/* 
+64-byte aligned allocation, so rows/tiles line up cleanly with cache
+ lines and (later, when I add SIMD) with AVX2/AVX-512 load widths.
+ */
 float* aligned_alloc_floats(std::size_t n) {
     void* ptr = nullptr;
     std::size_t bytes = n * sizeof(float);
@@ -53,6 +56,16 @@ void zero(Matrix& m) {
     for (std::size_t i = 0; i < m.n * m.n; ++i) m.data[i] = 0.0f;
 }
 
+//computes the maximum absolute element-wise difference between two matrices
+double max_abs_diff(const Matrix& a, const Matrix& b) { 
+    double worst = 0.0;
+    for (std::size_t i = 0; i < a.n * a.n; ++i) {
+        double d = std::abs(static_cast<double>(a.data[i]) - static_cast<double>(b.data[i]));
+        if (d > worst) worst = d;
+    }
+    return worst;
+}
+
 /* 
 Returns seconds for the fastest of `repeats` runs (fastest-of-N is the
  standard way to filter out OS jitter/scheduling noise in microbenchmarks).
@@ -93,8 +106,8 @@ int main(int argc, char** argv) {
 
     std::mt19937 rng(17);
 
-    std::printf("%-8s %-18s \n",
-                "n", "naive (s / GFLOP/s)");
+    std::printf("%-8s %-18s %-18s %-10s %-12s\n",
+                "n", "naive (s / GFLOP/s)", "tiled (s / GFLOP/s)", "speedup", "max|diff|");
     std::printf("--------------------------------------------------------------------------\n");
 
     for (std::size_t n : sizes) {
@@ -111,8 +124,16 @@ int main(int argc, char** argv) {
             //A callable object that takes no arguments.
             [&]() { zero(C_naive); matmul_naive(A.data, B.data, C_naive.data, n); }, repeats);
 
-        std::printf("%-8zu %6.3f / %-9.2f    \n",
-                    n, t_naive, gflops(n, t_naive));
+        double t_tiled = time_best_of(
+            [&]() { zero(C_tiled); matmul_tiled(A.data, B.data, C_tiled.data, n, /*tile_size=*/64); },  //A callable object that takes no arguments.
+            repeats);
+
+        double diff = max_abs_diff(C_naive, C_tiled);
+
+        std::printf("%-8zu %6.3f / %-9.2f %6.3f / %-9.2f %6.2fx    %.2e\n",
+                    n, t_naive, gflops(n, t_naive), t_tiled, gflops(n, t_tiled),
+                    t_naive / t_tiled, diff);
     }
+    return 0;
 
 }
