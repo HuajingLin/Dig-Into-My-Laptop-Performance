@@ -11,6 +11,7 @@ endif()
 # optimization options
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-O3 -march=native -Wall -Wextra)
+    add_compile_options(-fopt-info-vec-optimized)
 elseif(MSVC)
     add_compile_options(/O2 /arch:AVX2)
 endif()
@@ -19,6 +20,7 @@ add_executable(dig_perf
     src/main.cpp
     src/matmul_naive.cpp
     src/matmul_tiled.cpp
+    src/matmul_simd.cpp
 )
 
 target_include_directories(dig_perf PRIVATE include)

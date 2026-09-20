@@ -7,6 +7,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 namespace {
 
@@ -98,7 +99,7 @@ double gflops(std::size_t n, double seconds) {
 
 
 int main(int argc, char** argv) {
-    std::vector<std::size_t> sizes = {128, 256, 512, 768, 1024};
+    std::vector<std::size_t> sizes = {256, 512, 768, 1024, 1536};
     if (argc > 1) {
         sizes.clear();
         for (int i = 1; i < argc; ++i) sizes.push_back(static_cast<std::size_t>(std::stoul(argv[i])));
@@ -106,33 +107,48 @@ int main(int argc, char** argv) {
 
     std::mt19937 rng(17);
 
-    std::printf("%-8s %-18s %-18s %-10s %-12s\n",
-                "n", "naive (s / GFLOP/s)", "tiled (s / GFLOP/s)", "speedup", "max|diff|");
+    std::printf("%-6s %-16s %-16s %-16s %-9s %-9s\n",
+                "n", "naive GFLOP/s", "tiled GFLOP/s", "simd GFLOP/s",
+                "tiled/nv", "simd/tld");
+
     std::printf("--------------------------------------------------------------------------\n");
 
+    constexpr std::size_t tile_size = 128;
+
     for (std::size_t n : sizes) {
-        Matrix A(n), B(n), C_naive(n), C_tiled(n);
+        Matrix A(n), B(n), C_naive(n), C_tiled(n), C_simd(n);
         fill_random(A, rng);
         fill_random(B, rng);
-        zero(C_naive);
-        zero(C_tiled);
 
         // Fewer repeats for big matrices so the sweep doesn't take forever.
         int repeats = (n <= 256) ? 5 : (n <= 512 ? 3 : 2);
-
+        
         double t_naive = time_best_of(
             //A callable object that takes no arguments.
             [&]() { zero(C_naive); matmul_naive(A.data, B.data, C_naive.data, n); }, repeats);
 
         double t_tiled = time_best_of(
-            [&]() { zero(C_tiled); matmul_tiled(A.data, B.data, C_tiled.data, n, /*tile_size=*/64); },  //A callable object that takes no arguments.
+            [&]() { zero(C_tiled); matmul_tiled(A.data, B.data, C_tiled.data, n, tile_size); },  //A callable object that takes no arguments.
             repeats);
 
-        double diff = max_abs_diff(C_naive, C_tiled);
+        double t_simd = time_best_of(
+            //[&]() { zero(C_simd); matmul_simd(A.data, B.data, C_simd.data, n, tile_size); },
+            [&]() { zero(C_simd); matmul_simd(A.data, B.data, C_simd.data, n, tile_size); },
+            repeats);
 
-        std::printf("%-8zu %6.3f / %-9.2f %6.3f / %-9.2f %6.2fx    %.2e\n",
-                    n, t_naive, gflops(n, t_naive), t_tiled, gflops(n, t_tiled),
-                    t_naive / t_tiled, diff);
+        /*
+        Sanity check: every stage should agree with the naive baseline to 
+        within floating-point rounding error.
+        */
+        double diff_tiled = max_abs_diff(C_naive, C_tiled);
+        double diff_simd = max_abs_diff(C_naive, C_simd);
+        double worst_diff = std::max({diff_tiled, diff_simd});
+
+        std::printf("%-6zu %-16.2f %-16.2f %-16.2f %-4.2fx    %-4.2fx  (max|diff|=%.1e)%s\n",
+                    n, gflops(n, t_naive), gflops(n, t_tiled), gflops(n, t_simd),
+                    t_naive / t_tiled, t_tiled / t_simd,
+                    worst_diff, worst_diff > 1e-2 ? "  <-- CHECK THIS" : "");
+
     }
     return 0;
 
