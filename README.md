@@ -29,13 +29,13 @@ cmake --build build -j
 
 Sample output (11th Gen Intel i7-1185G7):
 ```
-n      naive GFLOP/s    tiled GFLOP/s    simd GFLOP/s     tiled/nv  simd/tld
------------------------------------------------------------------------------
-256    2.41             33.68            42.87            13.96x    1.27x  (max|diff|=5.7e-06)
-512    2.23             29.77            36.79            13.35x    1.24x  (max|diff|=9.5e-06)
-768    2.11             29.69            36.15            14.04x    1.22x  (max|diff|=1.7e-05)
-1024   0.93             25.24            30.69            27.28x    1.22x  (max|diff|=1.9e-05)
-1536   0.78             23.53            34.38            30.11x    1.46x  (max|diff|=2.7e-05)
+n      naive GFLOP/s    tiled GFLOP/s    simd GFLOP/s     threaded GFLOP/s tiled/nv  simd/tld  thrd/simd
+--------------------------------------------------------------------------------------------------------
+256    2.44             33.97            43.78            53.36            13.91x    1.29x     1.22x  (max|diff|=5.7e-06)
+512    2.24             30.16            39.09            106.04           13.47x    1.30x     2.71x  (max|diff|=9.5e-06)
+768    2.15             29.87            35.57            121.56           13.92x    1.19x     3.42x  (max|diff|=1.7e-05)
+1024   1.04             26.75            34.08            135.98           25.76x    1.27x     3.99x  (max|diff|=1.9e-05)
+1536   0.95             26.39            35.02            123.23           27.92x    1.33x     3.52x  (max|diff|=2.7e-05)
 ```
 
 ## Project layout
@@ -45,10 +45,11 @@ perf-project/
 ├── CMakeLists.txt
 ├── README.md
 ├── include/
-│   └── matmul.h          # shared declarations
+│   └── matmul.h            # shared declarations
 └── src/
-    ├── main.cpp           # benchmark harness (timing, GFLOP/s, correctness check)
-    ├── matmul_naive.cpp   # Stage 1
-    ├── matmul_tiled.cpp   # Stage 2
-    └── matmul_simd.cpp    # Stage 3 
+    ├── main.cpp            # benchmark harness (timing, GFLOP/s, correctness check)
+    ├── matmul_naive.cpp    # Stage 1
+    ├── matmul_tiled.cpp    # Stage 2
+    ├── matmul_simd.cpp     # Stage 3 
+    └── matmul_threaded.cpp # Stage 3
 ```

@@ -21,6 +21,7 @@ add_executable(dig_perf
     src/matmul_naive.cpp
     src/matmul_tiled.cpp
     src/matmul_simd.cpp
+    src/matmul_threaded.cpp
 )
 
 target_include_directories(dig_perf PRIVATE include)

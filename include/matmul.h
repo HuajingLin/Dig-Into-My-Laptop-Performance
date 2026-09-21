@@ -11,6 +11,14 @@ void matmul_naive(const float* A, const float* B, float* C, std::size_t n);
 void matmul_tiled(const float* A, const float* B, float* C, std::size_t n,
                    std::size_t tile_size = 128);
 
-// Stage 3:  the innermost j loop is hand-vectorized with AVX2 FMA intrinsics.
+// Stage 3:  the innermost j loop is hand-vectorized with AVX512 FMA intrinsics.
 void matmul_simd(const float* A, const float* B, float* C, std::size_t n,
                   std::size_t tile_size = 128);
+
+//reused by Stage 4
+void matmul_simd_AVX512_block(const float* A, const float* B, float* C, std::size_t n,
+                        std::size_t tile_size, std::size_t i_begin, std::size_t i_end);
+
+// Stage 4: Stage 3's kernel, parallelized across a std::thread pool.
+void matmul_threaded(const float* A, const float* B, float* C, std::size_t n,
+                      std::size_t tile_size = 64, unsigned num_threads = 0);

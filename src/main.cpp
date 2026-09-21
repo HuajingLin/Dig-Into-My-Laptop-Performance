@@ -7,6 +7,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <thread>
 #include <algorithm>
 
 namespace {
@@ -107,16 +108,18 @@ int main(int argc, char** argv) {
 
     std::mt19937 rng(17);
 
-    std::printf("%-6s %-16s %-16s %-16s %-9s %-9s\n",
-                "n", "naive GFLOP/s", "tiled GFLOP/s", "simd GFLOP/s",
-                "tiled/nv", "simd/tld");
+    unsigned hw_threads = std::thread::hardware_concurrency();
+    std::printf("hardware_concurrency() reports %u threads\n\n", hw_threads);
 
-    std::printf("--------------------------------------------------------------------------\n");
+    std::printf("%-6s %-16s %-16s %-16s %-16s %-9s %-9s %-9s\n",
+                "n", "naive GFLOP/s", "tiled GFLOP/s", "simd GFLOP/s", "threaded GFLOP/s",
+                "tiled/nv", "simd/tld", "thrd/simd");
+    std::printf("--------------------------------------------------------------------------------------------------------\n");
 
     constexpr std::size_t tile_size = 128;
 
     for (std::size_t n : sizes) {
-        Matrix A(n), B(n), C_naive(n), C_tiled(n), C_simd(n);
+        Matrix A(n), B(n), C_naive(n), C_tiled(n), C_simd(n), C_threaded(n);
         fill_random(A, rng);
         fill_random(B, rng);
 
@@ -132,21 +135,23 @@ int main(int argc, char** argv) {
             repeats);
 
         double t_simd = time_best_of(
-            //[&]() { zero(C_simd); matmul_simd(A.data, B.data, C_simd.data, n, tile_size); },
-            [&]() { zero(C_simd); matmul_simd(A.data, B.data, C_simd.data, n, tile_size); },
-            repeats);
+            [&]() { zero(C_simd); matmul_simd(A.data, B.data, C_simd.data, n, tile_size); }, repeats);
 
+         double t_threaded = time_best_of(
+            [&]() { zero(C_threaded); matmul_threaded(A.data, B.data, C_threaded.data, n, tile_size, /*num_threads=*/0); },
+            repeats);
         /*
         Sanity check: every stage should agree with the naive baseline to 
         within floating-point rounding error.
         */
         double diff_tiled = max_abs_diff(C_naive, C_tiled);
         double diff_simd = max_abs_diff(C_naive, C_simd);
-        double worst_diff = std::max({diff_tiled, diff_simd});
+        double diff_threaded = max_abs_diff(C_naive, C_threaded);
+        double worst_diff = std::max({diff_tiled, diff_simd, diff_threaded});
 
-        std::printf("%-6zu %-16.2f %-16.2f %-16.2f %-4.2fx    %-4.2fx  (max|diff|=%.1e)%s\n",
-                    n, gflops(n, t_naive), gflops(n, t_tiled), gflops(n, t_simd),
-                    t_naive / t_tiled, t_tiled / t_simd,
+        std::printf("%-6zu %-16.2f %-16.2f %-16.2f %-16.2f %-4.2fx    %-4.2fx     %-4.2fx  (max|diff|=%.1e)%s\n",
+                    n, gflops(n, t_naive), gflops(n, t_tiled), gflops(n, t_simd), gflops(n, t_threaded),
+                    t_naive / t_tiled, t_tiled / t_simd, t_simd / t_threaded,
                     worst_diff, worst_diff > 1e-2 ? "  <-- CHECK THIS" : "");
 
     }
