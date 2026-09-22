@@ -19,7 +19,7 @@ Unaligned loads/stores (_mm256_loadu_ps/storeu_ps) are used throughout for simpl
 correctness on any tile_size/n combination; on this generation of Intel hardware unaligned 
 AVX2 loads on cache-line-aligned data cost essentially nothing extra.
 */
-void matmul_simd__AVX2_block(const float* A, const float* B, float* C, std::size_t n,
+void matmul_simd_AVX2_block(const float* A, const float* B, float* C, std::size_t n,
                         std::size_t tile_size, std::size_t i_begin, std::size_t i_end) {
     constexpr std::size_t kLanes = 8; // 8 x float32 per AVX2 register
 

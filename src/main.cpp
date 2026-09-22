@@ -109,17 +109,20 @@ int main(int argc, char** argv) {
     std::mt19937 rng(17);
 
     unsigned hw_threads = std::thread::hardware_concurrency();
+    if (hw_threads == 0) hw_threads = 4; // fallback if the OS won't say
     std::printf("hardware_concurrency() reports %u threads\n\n", hw_threads);
 
-    std::printf("%-6s %-16s %-16s %-16s %-16s %-9s %-9s %-9s\n",
-                "n", "naive GFLOP/s", "tiled GFLOP/s", "simd GFLOP/s", "threaded GFLOP/s",
-                "tiled/nv", "simd/tld", "thrd/simd");
-    std::printf("--------------------------------------------------------------------------------------------------------\n");
+    //pool is created ONCE, outside the timed benchmark loop, and reused for every matrix size.
+    ThreadPool pool(hw_threads);
+
+    std::printf("%-6s %-9s %-9s %-9s %-9s %-9s   (GFLOP/s)\n",
+                "n", "naive", "tiled", "simd", "threaded", "micro-kernel");
+    std::printf("-------------------------------------------------------------------------------------------\n");
 
     constexpr std::size_t tile_size = 128;
 
     for (std::size_t n : sizes) {
-        Matrix A(n), B(n), C_naive(n), C_tiled(n), C_simd(n), C_threaded(n);
+        Matrix A(n), B(n), C_naive(n), C_tiled(n), C_simd(n), C_threaded(n), C_micro_kernel(n);
         fill_random(A, rng);
         fill_random(B, rng);
 
@@ -127,7 +130,6 @@ int main(int argc, char** argv) {
         int repeats = (n <= 256) ? 5 : (n <= 512 ? 3 : 2);
         
         double t_naive = time_best_of(
-            //A callable object that takes no arguments.
             [&]() { zero(C_naive); matmul_naive(A.data, B.data, C_naive.data, n); }, repeats);
 
         double t_tiled = time_best_of(
@@ -140,6 +142,11 @@ int main(int argc, char** argv) {
          double t_threaded = time_best_of(
             [&]() { zero(C_threaded); matmul_threaded(A.data, B.data, C_threaded.data, n, tile_size, /*num_threads=*/0); },
             repeats);
+
+        double t_micro_kernel = time_best_of(
+            [&]() { zero(C_micro_kernel); matmul_micro_kernel(A.data, B.data, C_micro_kernel.data, n, pool, tile_size); },
+            repeats);
+        
         /*
         Sanity check: every stage should agree with the naive baseline to 
         within floating-point rounding error.
@@ -147,12 +154,15 @@ int main(int argc, char** argv) {
         double diff_tiled = max_abs_diff(C_naive, C_tiled);
         double diff_simd = max_abs_diff(C_naive, C_simd);
         double diff_threaded = max_abs_diff(C_naive, C_threaded);
-        double worst_diff = std::max({diff_tiled, diff_simd, diff_threaded});
+        double diff_micro_kernel = max_abs_diff(C_naive, C_micro_kernel);
+        double worst_diff = std::max({diff_tiled, diff_simd, diff_threaded, diff_micro_kernel});
 
-        std::printf("%-6zu %-16.2f %-16.2f %-16.2f %-16.2f %-4.2fx    %-4.2fx     %-4.2fx  (max|diff|=%.1e)%s\n",
-                    n, gflops(n, t_naive), gflops(n, t_tiled), gflops(n, t_simd), gflops(n, t_threaded),
-                    t_naive / t_tiled, t_tiled / t_simd, t_simd / t_threaded,
+        std::printf("%-6zu %-9.2f %-9.2f %-9.2f %-9.2f %-9.2f   max|diff|=%.1e%s\n",
+                    n, gflops(n, t_naive), gflops(n, t_tiled), gflops(n, t_simd),
+                    gflops(n, t_threaded), gflops(n, t_micro_kernel),
                     worst_diff, worst_diff > 1e-2 ? "  <-- CHECK THIS" : "");
+        std::printf("%-6s %8s %8.2fx %8.2fx %8.2fx %8.2fx       (speedup over previous stage)\n",
+                    "", "", t_naive / t_tiled, t_tiled / t_simd, t_simd / t_threaded, t_threaded / t_micro_kernel);
 
     }
     return 0;
