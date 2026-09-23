@@ -27,3 +27,9 @@ void matmul_threaded(const float* A, const float* B, float* C, std::size_t n,
 // Stage 5: register-blocked + persistent pool
 void matmul_micro_kernel(const float* A, const float* B, float* C, std::size_t n,
                     ThreadPool& pool, std::size_t tile_size = 64);
+
+//Comparison with OpenBLAS
+void matmul_openblas(const float* A, const float* B, float* C, std::size_t n);
+
+// Set the number of threads used by OpenBLAS.
+void matmul_openblas_set_threads(int num_threads);

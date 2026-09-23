@@ -10,6 +10,8 @@ using dense matrix multiplication (`C = A * B`) as the workload.
 with a benchmarking harness that runs both back-to-back, 
 checks their outputs agree, and reports GFLOP/s. 
 
+[Project Wiki](https://github.com/HuajingLin/Dig-Into-My-Laptop-Performance/wiki/Dig-into-My-Laptop's-Performance)
+
 # Build
 
 Requires a C++17 compiler (GCC or Clang) and CMake ≥ 3.16.
@@ -23,7 +25,7 @@ cmake --build build -j
 ## Run
 
 ```bash
-./build/dig_perf                  # default sweep: 256, 512, 768, 1024, 1536
+./build/dig_perf                  # default sweep: 256, 512, 768, 1024, 2048
 ./build/dig_perf 256 1024 2048    # custom sizes
 ```
 
@@ -42,7 +44,23 @@ n      naive     tiled     simd      threaded  micro-kernel  (GFLOP/s)
 1536   0.80      15.47     22.96     76.25     166.76      max|diff|=2.7e-05
                    19.34x     1.48x     3.32x     2.19x       (speedup over previous stage)
 ```
-
+Comparison with OpenBLAS
+```
+n     my_matmul OpenBLAS    (GFLOP/s)
+--------------------------------------
+256   9.53      4.36        max|diff|=0.0e+00
+                   0.46x      (speedup over mine)
+512   33.56     33.58       max|diff|=3.6e-05
+                   1.00x      (speedup over mine)
+768   75.59     133.32      max|diff|=7.2e-05
+                   1.76x      (speedup over mine)
+1024  107.38    134.20      max|diff|=9.2e-05
+                   1.25x      (speedup over mine)
+1536  211.55    221.13      max|diff|=1.1e-04
+                   1.05x      (speedup over mine)
+2048  246.42    320.68      max|diff|=1.5e-04
+                   1.30x      (speedup over mine)
+```
 ## Project layout
 
 ```
@@ -50,13 +68,15 @@ perf-project/
 ├── CMakeLists.txt
 ├── README.md
 ├── include/
-│   └── matmul.h                # shared declarations
+│   ├── matmul.h                # shared declarations
+│   └── thread_pool.h           # ThreadPool declarations
 └── src/
     ├── main.cpp                # benchmark harness (timing, GFLOP/s, correctness check)
     ├── matmul_naive.cpp        # Stage 1
     ├── matmul_tiled.cpp        # Stage 2
     ├── matmul_simd.cpp         # Stage 3 
     ├── matmul_threaded.cpp     # Stage 4
-    └── matmul_micro_kernel.cpp # Stage 5
-    └── thread_pool.cpp         # ThreadPool implementation
+    ├── matmul_micro_kernel.cpp # Stage 5
+    ├── thread_pool.cpp         # ThreadPool implementation
+    └── matmul_openblas.cpp     # Comparison with OpenBLAS (compiled only if BLAS is found)
 ```

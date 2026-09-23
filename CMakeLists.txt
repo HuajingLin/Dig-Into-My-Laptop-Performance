@@ -30,3 +30,26 @@ target_include_directories(dig_perf PRIVATE include)
 
 find_package(Threads REQUIRED)
 target_link_libraries(dig_perf PRIVATE Threads::Threads)
+
+# --------  OpenBLAS comparison -------
+find_package(BLAS QUIET)
+find_path(PERF_MATMUL_CBLAS_INCLUDE_DIR cblas.h
+    PATHS /usr/include /usr/include/openblas /usr/local/include
+          /usr/local/opt/openblas/include /opt/homebrew/opt/openblas/include
+)
+
+if(BLAS_FOUND AND PERF_MATMUL_CBLAS_INCLUDE_DIR)
+    message(STATUS "dig_perf: BLAS found (${BLAS_LIBRARIES}) -- comparison OpenBLAS enabled.")
+    message(STATUS "dig_perf: NOTE -- find_package(BLAS) picks up whatever BLAS provider")
+    message(STATUS "  is configured as the system default. Confirm the library above is")
+    message(STATUS "  actually OpenBLAS (not reference BLAS/ATLAS) if the comparison looks")
+    message(STATUS "  off -- e.g. `ldd build/dig_perf | grep -i blas` after building.")
+    target_sources(dig_perf PRIVATE src/matmul_openblas.cpp)
+    target_compile_definitions(dig_perf PRIVATE PERF_MATMUL_HAVE_OPENBLAS)
+    target_include_directories(dig_perf PRIVATE ${PERF_MATMUL_CBLAS_INCLUDE_DIR})
+    target_link_libraries(dig_perf PRIVATE ${BLAS_LIBRARIES})
+else()
+    message(STATUS "dig_perf: BLAS/cblas.h not found -- OpenBLAS comparison")
+    message(STATUS "  will be skipped. Install libopenblas-dev (or equivalent) and")
+    message(STATUS "  reconfigure to enable it.")
+endif()

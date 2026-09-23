@@ -9,6 +9,10 @@
 #include <vector>
 #include <thread>
 #include <algorithm>
+#include <functional>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
 
 namespace {
 
@@ -96,11 +100,18 @@ double gflops(std::size_t n, double seconds) {
     return flops / seconds / 1e9;
 }
 
+//for comparing the performance between my own imolementations and OpenBLAS.
+struct Stage {
+    std::string name;
+    std::unique_ptr<Matrix> result;      // this stage's own C buffer
+    std::function<void(float*)> compute; // fills the given C buffer for one n x n run
+};
+
 }// namespace
 
 
 int main(int argc, char** argv) {
-    std::vector<std::size_t> sizes = {256, 512, 768, 1024, 1536};
+    std::vector<std::size_t> sizes = {256, 512, 768, 1024, 1536, 2048};
     if (argc > 1) {
         sizes.clear();
         for (int i = 1; i < argc; ++i) sizes.push_back(static_cast<std::size_t>(std::stoul(argv[i])));
@@ -114,13 +125,13 @@ int main(int argc, char** argv) {
 
     //pool is created ONCE, outside the timed benchmark loop, and reused for every matrix size.
     ThreadPool pool(hw_threads);
+    constexpr std::size_t tile_size = 128;
 
+#ifdef TEMPERLORLY_CANCEL_FOR_COMPARISON
     std::printf("%-6s %-9s %-9s %-9s %-9s %-9s   (GFLOP/s)\n",
                 "n", "naive", "tiled", "simd", "threaded", "micro-kernel");
     std::printf("-------------------------------------------------------------------------------------------\n");
-
-    constexpr std::size_t tile_size = 128;
-
+    
     for (std::size_t n : sizes) {
         Matrix A(n), B(n), C_naive(n), C_tiled(n), C_simd(n), C_threaded(n), C_micro_kernel(n);
         fill_random(A, rng);
@@ -165,6 +176,71 @@ int main(int argc, char** argv) {
                     "", "", t_naive / t_tiled, t_tiled / t_simd, t_simd / t_threaded, t_threaded / t_micro_kernel);
 
     }
+#endif    
+    //for comparing the performance between my own imolementations and OpenBLAS.
+    for (std::size_t n : sizes) {
+        Matrix A(n), B(n);
+        fill_random(A, rng);
+        fill_random(B, rng);
+
+        std::vector<Stage> stages;
+        auto add_stage = [&](const std::string& name, std::function<void(float*)> compute) {
+            stages.push_back(Stage{name, std::make_unique<Matrix>(n), std::move(compute)});
+        };
+
+        add_stage("my_matmul", [&](float* c) { matmul_micro_kernel(A.data, B.data, c, n, pool, tile_size); });
+#ifdef PERF_MATMUL_HAVE_OPENBLAS
+        add_stage("OpenBLAS", [&](float* c) {
+            matmul_openblas_set_threads(static_cast<int>(hw_threads));
+            matmul_openblas(A.data, B.data, c, n);
+        });
+#else
+        std::printf("OpenBLAS not available, skipping comparison.\n");
+        continue;
+#endif
+        // Fewer repeats for big matrices so the sweep doesn't take forever.
+        int repeats = (n <= 256) ? 5 : (n <= 512 ? 3 : 2);
+
+        std::vector<double> times(stages.size());
+        for (std::size_t i = 0; i < stages.size(); ++i) {
+            Matrix& result = *stages[i].result;
+            const auto& compute = stages[i].compute;
+            times[i] = time_best_of([&]() { zero(result); compute(result.data); }, repeats);
+        }
+
+        // Sanity check: every stage should agree with stage 0 (naive) to
+        // within floating-point rounding error.
+        double worst_diff = 0.0;
+        for (std::size_t i = 1; i < stages.size(); ++i) {
+            worst_diff = std::max(worst_diff, max_abs_diff(*stages[0].result, *stages[i].result));
+        }
+
+        if (n == sizes.front()) {   // print header only once
+            std::cout << std::left << std::setw(6) << "n";
+            for (auto& s : stages) std::cout << std::setw(10) << s.name;
+            std::cout << "  (GFLOP/s)\n";
+            std::cout << std::string(6 + 10 * stages.size() + 12, '-') << "\n";
+        }
+
+        std::cout << std::left << std::setw(6) << n;
+        for (std::size_t i = 0; i < stages.size(); ++i) {   //print the GFLOPS for each stage
+            std::cout << std::setw(10) << std::fixed << std::setprecision(2) << gflops(n, times[i]);
+        }
+        std::cout << "  max|diff|=" << std::scientific << std::setprecision(1) << worst_diff;
+        if (worst_diff > 1e-2) std::cout << "  <-- CHECK THIS";
+        std::cout << "\n";
+
+        std::cout << std::string(6, ' ');
+        std::cout << std::setw(10) << " "; // naive has no "speedup over previous" entry
+        for (std::size_t i = 1; i < stages.size(); ++i) {
+            std::ostringstream ratio;
+            ratio <<"   "<< std::fixed << std::setprecision(2) << (times[i - 1] / times[i]) << "x";
+            std::cout << std::setw(12) << ratio.str();
+        }
+        std::cout << "  (speedup over mine)\n";
+
+    }
+
     return 0;
 
 }
